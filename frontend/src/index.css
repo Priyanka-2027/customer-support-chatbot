@@ -1,0 +1,30 @@
+/*
+  index.css
+  ─────────────────────────────────────────────────────────────
+  Global styles. Imported once in main.tsx so it applies
+  everywhere.
+
+  Tailwind v4 uses a CSS-first configuration approach.
+  The @import directive below pulls in all of Tailwind's
+  utilities, components, and base styles in one line.
+  No tailwind.config.js file needed.
+*/
+
+@import "tailwindcss";
+
+/*
+  Base resets — applied on top of Tailwind's preflight.
+  box-border makes padding and border included in element width,
+  which is the intuitive CSS box model.
+*/
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Prevent horizontal scroll on mobile */
+html,
+body {
+  overflow-x: hidden;
+}

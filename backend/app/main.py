@@ -1,0 +1,237 @@
+# main.py
+# ─────────────────────────────────────────────────────────────
+# Responsibility:
+#   Application entry point. Creates the FastAPI app instance,
+#   configures cross-cutting concerns (CORS, logging), registers
+#   routes, and defines lifecycle events.
+#
+# This file should stay thin. It wires things together —
+# it does not contain business logic.
+#
+# Start the server:
+#   uvicorn app.main:app --reload --port 8000
+# ─────────────────────────────────────────────────────────────
+
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.auth import router as auth_router
+from app.chat import router as chat_router
+from app.config import ENVIRONMENT, JWT_SECRET_KEY, PINECONE_API_KEY, PINECONE_INDEX_NAME
+from app.database import init_db
+
+# ── Logging configuration ─────────────────────────────────────
+# Configure logging once at the application entry point.
+# All modules use logging.getLogger(__name__) which inherits
+# this root configuration. Format includes timestamp, level,
+# and the specific module that logged the message.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────────────────────────
+# Lifespan — startup and shutdown events
+# ─────────────────────────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Manage application startup and shutdown.
+
+    @asynccontextmanager makes this an async context manager.
+    Code before `yield` runs on startup.
+    Code after `yield` runs on shutdown.
+
+    FastAPI replaced the older @app.on_event("startup") pattern
+    with lifespan in v0.93.0. The lifespan approach is cleaner —
+    startup and shutdown logic live together in one function.
+    """
+
+    # ── STARTUP ───────────────────────────────────────────────
+    logger.info("═" * 55)
+    logger.info("Customer Support Chatbot API — Starting up")
+    logger.info(f"Environment : {ENVIRONMENT}")
+    logger.info("═" * 55)
+
+    # ── Validate JWT secret key ───────────────────────────────
+    # Fail fast if the secret is not configured rather than
+    # running with an empty key that any attacker can trivially
+    # reproduce. The server refuses to start without it.
+    if not JWT_SECRET_KEY:
+        raise RuntimeError(
+            "JWT_SECRET_KEY is not set in .env\n"
+            "Generate one with:\n"
+            "  python -c \"import secrets; print(secrets.token_hex(32))\"\n"
+            "Then add it to backend/.env:\n"
+            "  JWT_SECRET_KEY=<generated_value>"
+        )
+
+    # ── Initialise the database ───────────────────────────────
+    # Creates tables and indexes if they don't exist yet.
+    # Safe to call on every startup — uses IF NOT EXISTS.
+    logger.info("Initialising database...")
+    await init_db()
+
+    # ── Validate Pinecone credentials (production only) ───────
+    # Fail fast if Pinecone env vars are missing rather than
+    # letting the server start and fail on the first request.
+    if ENVIRONMENT == "production":
+        if not PINECONE_API_KEY:
+            raise RuntimeError(
+                "PINECONE_API_KEY is not set in .env\n"
+                "This is required when ENVIRONMENT=production.\n"
+                "Add it to backend/.env:\n  PINECONE_API_KEY=<your-key>"
+            )
+        if not PINECONE_INDEX_NAME:
+            raise RuntimeError(
+                "PINECONE_INDEX_NAME is not set in .env\n"
+                "This is required when ENVIRONMENT=production.\n"
+                "Add it to backend/.env:\n  PINECONE_INDEX_NAME=<your-index>"
+            )
+
+    # Pre-warm the vector store and embedding model on startup.
+    # Uses get_retriever() which routes to FAISS (dev) or Pinecone (prod)
+    # based on ENVIRONMENT — no backend-specific code needed here.
+    try:
+        from app.retriever import get_retriever
+        from app.embeddings import get_embedding_model
+
+        logger.info("Pre-warming embedding model...")
+        get_embedding_model()           # loads and caches the model
+
+        logger.info(f"Pre-warming vector store ({ENVIRONMENT} backend)...")
+        get_retriever()                 # connects/loads and caches the store
+        logger.info("Vector store ready.")
+
+    except FileNotFoundError:
+        # FAISS index doesn't exist yet — ingestion hasn't been run.
+        logger.warning(
+            "Vector store not found. "
+            "Run 'python -m app.ingest' to build it. "
+            "The /health endpoint will report 'degraded' until then."
+        )
+    except Exception as e:
+        logger.error(f"Startup pre-warm failed: {e}", exc_info=True)
+
+    logger.info("API ready. Listening for requests.")
+
+    # ── yield — application runs here ─────────────────────────
+    yield
+
+    # ── SHUTDOWN ──────────────────────────────────────────────
+    # Python's garbage collector and lru_cache cleanup happen
+    # automatically. We just log the shutdown for audit purposes.
+    logger.info("Customer Support Chatbot API — Shutting down.")
+
+
+# ─────────────────────────────────────────────────────────────
+# FastAPI application instance
+# ─────────────────────────────────────────────────────────────
+
+app = FastAPI(
+    # title and description appear in the auto-generated /docs UI.
+    title="Customer Support Chatbot API",
+    description=(
+        "A Retrieval-Augmented Generation (RAG) API that answers "
+        "customer support questions using your documentation as the "
+        "knowledge base. Built with FastAPI, LangChain, FAISS, and Gemini."
+    ),
+    version="1.0.0",
+
+    # docs_url: where Swagger UI is served.
+    # Default is /docs — keep this for development.
+    # Set to None in production if you want to hide it.
+    docs_url="/docs",
+
+    # redoc_url: where ReDoc (alternative API docs) is served.
+    redoc_url="/redoc",
+
+    # lifespan: the context manager defined above.
+    # Replaces the deprecated on_event("startup") pattern.
+    lifespan=lifespan,
+)
+
+
+# ─────────────────────────────────────────────────────────────
+# CORS middleware
+# ─────────────────────────────────────────────────────────────
+# CORS (Cross-Origin Resource Sharing) controls which origins
+# (domains) are allowed to make requests to this API.
+#
+# Why we need this:
+#   Browsers block requests from one origin to another by default.
+#   React on http://localhost:5173 trying to call FastAPI on
+#   http://localhost:8000 is a cross-origin request.
+#   Without CORS middleware, the browser silently blocks it.
+#
+# CORSMiddleware adds the appropriate headers to responses so
+# the browser allows the request.
+
+# ── Define allowed origins ────────────────────────────────────
+# Origins that are permitted to call this API.
+# In production, replace localhost entries with your real domains.
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+]
+
+import os
+production_frontend_url = os.getenv("FRONTEND_URL", "")
+if production_frontend_url:
+    ALLOWED_ORIGINS.append(production_frontend_url)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ─────────────────────────────────────────────────────────────
+# Route registration
+# ─────────────────────────────────────────────────────────────
+
+# include_router() mounts all routes defined in chat.py onto
+# this application. The prefix "/api/v1" is prepended to every
+# route path, so:
+#   GET  /health     → GET  /api/v1/health
+#   POST /chat       → POST /api/v1/chat
+#   POST /upload     → POST /api/v1/upload
+#
+# Versioning the API (/v1) is best practice — when you need
+# to make breaking changes, you add /v2 routes without removing
+# /v1, so existing clients keep working.
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(chat_router, prefix="/api/v1")
+
+
+# ─────────────────────────────────────────────────────────────
+# Root endpoint — API info
+# ─────────────────────────────────────────────────────────────
+
+@app.get("/", tags=["System"], summary="API root")
+async def root() -> dict:
+    """
+    Root endpoint. Returns basic API information.
+
+    Useful for verifying the server is reachable and finding
+    the documentation URLs without opening /docs manually.
+    """
+    return {
+        "name": "Customer Support Chatbot API",
+        "version": "1.0.0",
+        "status": "running",
+        "docs": "/docs",
+        "health": "/api/v1/health",
+    }
