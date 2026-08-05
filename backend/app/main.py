@@ -166,9 +166,44 @@ ALLOWED_ORIGINS = [
 ]
 
 import os
+import re
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+
 production_frontend_url = os.getenv("FRONTEND_URL", "")
 if production_frontend_url:
     ALLOWED_ORIGINS.append(production_frontend_url)
+
+# Also allow all Vercel preview deployments for this project
+ALLOWED_ORIGIN_PATTERNS = [
+    re.compile(r"https://customer-support-chatbot.*\.vercel\.app$"),
+]
+
+def is_origin_allowed(origin: str) -> bool:
+    if origin in ALLOWED_ORIGINS:
+        return True
+    return any(p.match(origin) for p in ALLOWED_ORIGIN_PATTERNS)
+
+class DynamicCORSMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: StarletteRequest, call_next):
+        origin = request.headers.get("origin", "")
+        if request.method == "OPTIONS" and is_origin_allowed(origin):
+            from starlette.responses import Response
+            response = Response()
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "*"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+            return response
+        response = await call_next(request)
+        if is_origin_allowed(origin):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "*"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
+
+app.add_middleware(DynamicCORSMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
