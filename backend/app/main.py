@@ -96,29 +96,10 @@ async def lifespan(app: FastAPI):
                 "Add it to backend/.env:\n  PINECONE_INDEX_NAME=<your-index>"
             )
 
-    # Pre-warm the vector store and embedding model on startup.
-    # Uses get_retriever() which routes to FAISS (dev) or Pinecone (prod)
-    # based on ENVIRONMENT — no backend-specific code needed here.
-    try:
-        from app.retriever import get_retriever
-        from app.embeddings import get_embedding_model
-
-        logger.info("Pre-warming embedding model...")
-        get_embedding_model()           # loads and caches the model
-
-        logger.info(f"Pre-warming vector store ({ENVIRONMENT} backend)...")
-        get_retriever()                 # connects/loads and caches the store
-        logger.info("Vector store ready.")
-
-    except FileNotFoundError:
-        # FAISS index doesn't exist yet — ingestion hasn't been run.
-        logger.warning(
-            "Vector store not found. "
-            "Run 'python -m app.ingest' to build it. "
-            "The /health endpoint will report 'degraded' until then."
-        )
-    except Exception as e:
-        logger.error(f"Startup pre-warm failed: {e}", exc_info=True)
+    # Skip pre-warming on startup — load lazily on first request.
+    # This keeps startup fast so the server binds to the port quickly.
+    # The embedding model and vector store will be loaded on first /chat call.
+    logger.info("Startup complete — model/vector store will load on first request.")
 
     logger.info("API ready. Listening for requests.")
 
