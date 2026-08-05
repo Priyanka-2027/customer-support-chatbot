@@ -183,23 +183,27 @@ def is_origin_allowed(origin: str) -> bool:
         return True
     return any(p.match(origin) for p in ALLOWED_ORIGIN_PATTERNS)
 
+_CORS_ALLOW_HEADERS = "Content-Type, Authorization, Accept, Origin, X-Requested-With"
+_CORS_ALLOW_METHODS = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+
 class DynamicCORSMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: StarletteRequest, call_next):
         origin = request.headers.get("origin", "")
         if request.method == "OPTIONS" and is_origin_allowed(origin):
             from starlette.responses import Response
-            response = Response()
+            response = Response(status_code=204)
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Allow-Methods"] = "*"
-            response.headers["Access-Control-Allow-Headers"] = "*"
+            response.headers["Access-Control-Allow-Methods"] = _CORS_ALLOW_METHODS
+            response.headers["Access-Control-Allow-Headers"] = _CORS_ALLOW_HEADERS
+            response.headers["Access-Control-Max-Age"] = "600"
             return response
         response = await call_next(request)
         if is_origin_allowed(origin):
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
-            response.headers["Access-Control-Allow-Methods"] = "*"
-            response.headers["Access-Control-Allow-Headers"] = "*"
+            response.headers["Access-Control-Allow-Methods"] = _CORS_ALLOW_METHODS
+            response.headers["Access-Control-Allow-Headers"] = _CORS_ALLOW_HEADERS
         return response
 
 app.add_middleware(DynamicCORSMiddleware)
