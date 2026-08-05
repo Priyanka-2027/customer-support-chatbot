@@ -5,22 +5,18 @@ uvicorn==0.30.1
 # Required for multipart/form-data file uploads (POST /upload)
 python-multipart==0.0.9
 
-# LangChain 0.3.x family — all must be 0.3.x to share langchain-core>=0.3
+# LangChain 0.3.x family
 langchain==0.3.25
 langchain-community==0.3.24
 langchain-core==0.3.62
 langchain-text-splitters==0.3.8
 langchain-google-genai==2.1.4
-langchain-huggingface==0.1.2
 langchain-pinecone==0.2.13
 
 # PDF loading
 pypdf==4.2.0
 
-# Embeddings (local, free)
-sentence-transformers==3.3.1
-
-# Vector store
+# Vector store (FAISS for dev, Pinecone for prod)
 faiss-cpu==1.9.0
 
 # Pinecone
