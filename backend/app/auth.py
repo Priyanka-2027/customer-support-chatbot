@@ -49,9 +49,10 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 def _set_auth_cookies(response: Response, user_id: str) -> None:
     """Set access_token and refresh_token HttpOnly cookies on response."""
     is_secure = ENVIRONMENT != "development"
-    # Use "lax" in development (cross-port requests from localhost:5173 to localhost:8000)
-    # Use "strict" in production (same-origin deployment)
-    samesite = "strict" if ENVIRONMENT != "development" else "lax"
+    # "none" required for cross-origin requests (Vercel → Render).
+    # "none" requires secure=True (HTTPS only).
+    # "lax" in development for localhost cross-port requests.
+    samesite = "lax" if ENVIRONMENT == "development" else "none"
     access_token = create_access_token(user_id)
     refresh_token = create_refresh_token(user_id)
     response.set_cookie(
@@ -347,7 +348,7 @@ async def logout(response: Response) -> LogoutResponse:
     to do and no reason to signal an error.
     """
     is_secure = ENVIRONMENT != "development"
-    samesite = "strict" if ENVIRONMENT != "development" else "lax"
+    samesite = "lax" if ENVIRONMENT == "development" else "none"
     for name in ("access_token", "refresh_token"):
         response.delete_cookie(
             key=name,
