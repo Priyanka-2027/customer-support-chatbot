@@ -16,7 +16,6 @@ from typing import List
 
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
-from langchain_huggingface import HuggingFaceEmbeddings
 
 from app.config import VECTORSTORE_DIR
 from app.embeddings import get_embedding_model
@@ -61,7 +60,7 @@ def build_vectorstore(chunks: List[Document]) -> FAISS:
     # new model here. The @lru_cache decorator on that function
     # ensures we always get the same model instance — no duplicate
     # loading, no extra 90MB of RAM.
-    embedding_model: HuggingFaceEmbeddings = get_embedding_model()
+    embedding_model = get_embedding_model()
 
     # ── FAISS.from_documents() ────────────────────────────────
     # This is the core operation. Under the hood it does three
@@ -186,7 +185,7 @@ def load_vectorstore() -> FAISS:
     # a comparable vector. If you used a different model here,
     # the query vector would live in a completely different
     # mathematical space and similarity search would be meaningless.
-    embedding_model: HuggingFaceEmbeddings = get_embedding_model()
+    embedding_model = get_embedding_model()
 
     # ── load_local() ──────────────────────────────────────────
     # Reads index.faiss and index.pkl from disk and reconstructs
