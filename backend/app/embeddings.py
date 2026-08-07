@@ -21,7 +21,7 @@ from app.config import GOOGLE_API_KEY
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_MODEL_NAME = "models/text-embedding-004"
+EMBEDDING_MODEL_NAME = "models/embedding-001"
 
 
 @lru_cache(maxsize=1)

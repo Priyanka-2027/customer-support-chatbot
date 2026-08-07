@@ -737,3 +737,57 @@ def _merge_chunks_into_store(chunks: list) -> None:
             f"Invalid ENVIRONMENT value: '{ENVIRONMENT}'. "
             "Must be 'development' or 'production'."
         )
+
+# ─────────────────────────────────────────────────────────────
+# POST /admin/ingest
+# ─────────────────────────────────────────────────────────────
+# One-time endpoint to trigger document ingestion on the server.
+# Protected by a secret key passed as a query parameter.
+# Call once to populate Pinecone, then it's done permanently.
+
+@router.post(
+    "/admin/ingest",
+    tags=["Admin"],
+    summary="Trigger document ingestion",
+)
+async def trigger_ingestion(secret: str) -> dict:
+    """
+    Trigger the full ingestion pipeline on the server.
+    Protected by ADMIN_SECRET env var.
+    """
+    import os
+    admin_secret = os.getenv("ADMIN_SECRET", "")
+    if not admin_secret or secret != admin_secret:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or missing admin secret.",
+        )
+
+    try:
+        result = await run_in_threadpool(_run_ingestion)
+        return {"status": "ok", "chunks": result}
+    except Exception as e:
+        logger.error(f"Admin ingestion failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ingestion failed: {str(e)}",
+        )
+
+
+def _run_ingestion() -> int:
+    """Run the full ingestion pipeline synchronously."""
+    from app.ingest import load_documents, split_documents
+    from app.embeddings import get_embedding_model
+
+    docs = load_documents()
+    chunks = split_documents(docs)
+
+    if ENVIRONMENT == "production":
+        from app.pinecone_store import build_pinecone_store
+        get_embedding_model()  # warm up
+        build_pinecone_store(chunks, get_embedding_model())
+    else:
+        store = build_vectorstore(chunks)
+        save_vectorstore(store)
+
+    return len(chunks)
