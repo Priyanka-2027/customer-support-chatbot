@@ -745,7 +745,7 @@ def _merge_chunks_into_store(chunks: list) -> None:
 # Protected by a secret key passed as a query parameter.
 # Call once to populate Pinecone, then it's done permanently.
 
-@router.post(
+@router.get(
     "/admin/ingest",
     tags=["Admin"],
     summary="Trigger document ingestion",
