@@ -33,9 +33,14 @@ class GoogleGenAIEmbeddings(Embeddings):
         return [e.values for e in response.embeddings]
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        import time
         result = []
-        for i in range(0, len(texts), 100):
-            result.extend(self._embed_batch(texts[i:i+100], "RETRIEVAL_DOCUMENT"))
+        for i in range(0, len(texts), 80):  # 80 per batch to stay under 100/min
+            if i > 0:
+                time.sleep(65)  # wait 65 seconds between batches
+            batch = texts[i:i+80]
+            logger.info(f"Embedding batch {i//80 + 1} of {(len(texts)-1)//80 + 1} ({len(batch)} chunks)...")
+            result.extend(self._embed_batch(batch, "RETRIEVAL_DOCUMENT"))
         return result
 
     def embed_query(self, text: str) -> List[float]:
