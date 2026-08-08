@@ -774,6 +774,27 @@ async def trigger_ingestion(secret: str) -> dict:
         )
 
 
+@router.get("/admin/list-models", tags=["Admin"])
+async def list_embedding_models(secret: str) -> dict:
+    """List available embedding models for this API key."""
+    import os
+    admin_secret = os.getenv("ADMIN_SECRET", "")
+    if not admin_secret or secret != admin_secret:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    try:
+        from google import genai as google_genai
+        from app.config import GOOGLE_API_KEY
+        client = google_genai.Client(api_key=GOOGLE_API_KEY)
+        models = client.models.list()
+        embedding_models = [
+            m.name for m in models
+            if "embed" in m.name.lower() or "embedding" in m.name.lower()
+        ]
+        return {"embedding_models": embedding_models}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 def _run_ingestion() -> int:
     """Run the full ingestion pipeline synchronously."""
     from app.ingest import load_documents, split_documents
