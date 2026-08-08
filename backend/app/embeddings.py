@@ -1,50 +1,44 @@
 # embeddings.py
-# Uses Google's text-embedding-004 via direct HTTP calls (v1 API).
-# Bypasses all SDKs to avoid v1beta issues.
+# Uses Google's text-embedding-004 via google-genai SDK.
+# AQ. format keys only work with google-genai SDK, not REST API.
 
 import logging
 from functools import lru_cache
 from typing import List
 
-import httpx
 from langchain_core.embeddings import Embeddings
+from google import genai
+from google.genai import types
 
 from app.config import GOOGLE_API_KEY
 
 logger = logging.getLogger(__name__)
 
 EMBEDDING_MODEL_NAME = "text-embedding-004"
-EMBED_URL = f"https://generativelanguage.googleapis.com/v1/models/{EMBEDDING_MODEL_NAME}:batchEmbedContents"
 
 
 class GoogleGenAIEmbeddings(Embeddings):
-    """Direct HTTP calls to Google v1 API for embeddings."""
+    """LangChain-compatible wrapper using google-genai SDK."""
+
+    def __init__(self):
+        self.client = genai.Client(
+            api_key=GOOGLE_API_KEY,
+            http_options={"api_version": "v1"},
+        )
 
     def _embed_batch(self, texts: List[str], task_type: str) -> List[List[float]]:
-        requests_payload = [
-            {
-                "model": f"models/{EMBEDDING_MODEL_NAME}",
-                "content": {"parts": [{"text": t}]},
-                "taskType": task_type,
-            }
-            for t in texts
-        ]
-        response = httpx.post(
-            EMBED_URL,
-            params={"key": GOOGLE_API_KEY},
-            json={"requests": requests_payload},
-            timeout=60,
+        contents = [types.Content(parts=[types.Part(text=t)]) for t in texts]
+        response = self.client.models.embed_content(
+            model=EMBEDDING_MODEL_NAME,
+            contents=contents,
+            config=types.EmbedContentConfig(task_type=task_type),
         )
-        response.raise_for_status()
-        data = response.json()
-        return [item["embedding"]["values"] for item in data["embeddings"]]
+        return [e.values for e in response.embeddings]
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         result = []
-        batch_size = 100
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
-            result.extend(self._embed_batch(batch, "RETRIEVAL_DOCUMENT"))
+        for i in range(0, len(texts), 100):
+            result.extend(self._embed_batch(texts[i:i+100], "RETRIEVAL_DOCUMENT"))
         return result
 
     def embed_query(self, text: str) -> List[float]:
@@ -53,7 +47,7 @@ class GoogleGenAIEmbeddings(Embeddings):
 
 @lru_cache(maxsize=1)
 def get_embedding_model() -> GoogleGenAIEmbeddings:
-    logger.info(f"Initialising Google embedding model: '{EMBEDDING_MODEL_NAME}' (direct v1 API)")
+    logger.info(f"Initialising Google embedding model: '{EMBEDDING_MODEL_NAME}'")
     model = GoogleGenAIEmbeddings()
     logger.info("Google embedding model ready.")
     return model
