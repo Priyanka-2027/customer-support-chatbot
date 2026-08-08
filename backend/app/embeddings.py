@@ -14,24 +14,24 @@ from app.config import GOOGLE_API_KEY
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_MODEL_NAME = "text-embedding-004"
+EMBEDDING_MODEL_NAME = "gemini-embedding-004"
 
 
 class GoogleGenAIEmbeddings(Embeddings):
     """LangChain-compatible wrapper using google-genai SDK."""
 
     def __init__(self):
-        self.client = genai.Client(
-            api_key=GOOGLE_API_KEY,
-            http_options={"api_version": "v1"},
-        )
+        self.client = genai.Client(api_key=GOOGLE_API_KEY)
 
     def _embed_batch(self, texts: List[str], task_type: str) -> List[List[float]]:
         contents = [types.Content(parts=[types.Part(text=t)]) for t in texts]
         response = self.client.models.embed_content(
             model=EMBEDDING_MODEL_NAME,
             contents=contents,
-            config=types.EmbedContentConfig(task_type=task_type),
+            config=types.EmbedContentConfig(
+                task_type=task_type,
+                output_dimensionality=768,
+            ),
         )
         return [e.values for e in response.embeddings]
 
