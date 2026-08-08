@@ -28,7 +28,10 @@ class GoogleGenAIEmbeddings(Embeddings):
         response = self.client.models.embed_content(
             model=EMBEDDING_MODEL_NAME,
             contents=contents,
-            config=types.EmbedContentConfig(task_type=task_type),
+            config=types.EmbedContentConfig(
+                task_type=task_type,
+                output_dimensionality=768,
+            ),
         )
         return [e.values for e in response.embeddings]
 
