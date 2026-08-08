@@ -14,7 +14,7 @@ from app.config import GOOGLE_API_KEY
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_MODEL_NAME = "gemini-embedding-004"
+EMBEDDING_MODEL_NAME = "gemini-embedding-001"
 
 
 class GoogleGenAIEmbeddings(Embeddings):
@@ -28,10 +28,7 @@ class GoogleGenAIEmbeddings(Embeddings):
         response = self.client.models.embed_content(
             model=EMBEDDING_MODEL_NAME,
             contents=contents,
-            config=types.EmbedContentConfig(
-                task_type=task_type,
-                output_dimensionality=768,
-            ),
+            config=types.EmbedContentConfig(task_type=task_type),
         )
         return [e.values for e in response.embeddings]
 
