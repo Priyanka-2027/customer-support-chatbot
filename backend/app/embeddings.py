@@ -24,16 +24,28 @@ class GoogleGenAIEmbeddings(Embeddings):
         self.client = genai.Client(api_key=GOOGLE_API_KEY)
 
     def _embed_batch(self, texts: List[str], task_type: str) -> List[List[float]]:
+        import time
         contents = [types.Content(parts=[types.Part(text=t)]) for t in texts]
-        response = self.client.models.embed_content(
-            model=EMBEDDING_MODEL_NAME,
-            contents=contents,
-            config=types.EmbedContentConfig(
-                task_type=task_type,
-                output_dimensionality=768,
-            ),
-        )
-        return [e.values for e in response.embeddings]
+        
+        for attempt in range(5):  # retry up to 5 times
+            try:
+                response = self.client.models.embed_content(
+                    model=EMBEDDING_MODEL_NAME,
+                    contents=contents,
+                    config=types.EmbedContentConfig(
+                        task_type=task_type,
+                        output_dimensionality=768,
+                    ),
+                )
+                return [e.values for e in response.embeddings]
+            except Exception as e:
+                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                    wait = 65 * (attempt + 1)  # 65s, 130s, 195s...
+                    logger.warning(f"Rate limit hit, waiting {wait}s before retry {attempt + 1}/5...")
+                    time.sleep(wait)
+                else:
+                    raise
+        raise RuntimeError("Embedding failed after 5 retries due to rate limits.")
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         import time
