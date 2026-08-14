@@ -19,7 +19,7 @@ export function getAccessToken(): string | null {
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: { "Content-Type": "application/json" },
-  timeout: 30000,
+  timeout: 90000, // 90 seconds — handles Render free tier cold starts (~50s)
   withCredentials: true,
 });
 
